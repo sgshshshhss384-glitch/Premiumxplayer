@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Z-Tera Player</title>
+
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+
+    <style>
+        :root {
+            --bg: #0f172a;
+            --card: #1e293b;
+        }
+        body {
+            margin: 0;
+            padding: 20px;
+            background: var(--bg);
+            font-family: system-ui, Segoe UI;
+            color: #fff;
+            display: flex;
+            justify-content: center;
+            flex-direction: column;
+            align-items: center;
+        }
+        .main-card {
+            width: 100%;
+            max-width: 1000px;
+            background: var(--card);
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, .5);
+        }
+        .video-section {
+            position: relative;
+            background: #000;
+        }
+        .buffering {
+            position: absolute;
+            inset: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, .4);
+            z-index: 5;
+        }
+        video {
+            width: 100%;
+        }
+        .content {
+            padding: 22px;
+        }
+        .title {
+            font-size: 1.3rem;
+            margin-bottom: 12px;
+        }
+        .meta {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 14px;
+            background: rgba(255, 255, 255, .05);
+            padding: 14px;
+            border-radius: 12px;
+            margin-bottom: 18px;
+        }
+        .meta div {
+            font-size: .9rem;
+            color: #94a3b8;
+        }
+        .actions {
+            display: flex;
+            gap: 14px;
+            flex-wrap: wrap;
+        }
+        .btn {
+            flex: 1;
+            min-width: 200px;
+            padding: 14px;
+            border-radius: 12px;
+            text-decoration: none;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            color: #fff;
+        }
+        .download {
+            background: #3b82f6
+        }
+        .fast {
+            background: #10b981
+        }
+        #loading {
+            padding: 100px;
+            text-align: center;
+        }
+
+        /* ---------- DAILY LIMIT OVERLAY ---------- */
+        .overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            backdrop-filter: blur(6px);
+            z-index: 9999;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+        }
+        .overlay.show {
+            display: flex;
+        }
+        .modal-card {
+            background: #1e293b;
+            padding: 30px 24px;
+            border-radius: 20px;
+            text-align: center;
+            max-width: 340px;
+            width: 90%;
+            color: white;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+        }
+        .modal-card h2 {
+            font-size: 1.5rem;
+            margin-bottom: 12px;
+        }
+        .modal-card p {
+            color: #ccc;
+            margin-bottom: 16px;
+        }
+        .share-btn {
+            background: #25D366;
+            color: white;
+            border: none;
+            padding: 14px 24px;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: bold;
+            margin-top: 12px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            justify-content: center;
+            transition: 0.2s;
+        }
+        .share-btn:hover {
+            background: #1ebe57;
+        }
+        .limit-note {
+            font-size: 0.8rem;
+            color: #aaa;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+
+<!-- ========== DAILY LIMIT MODAL ========== -->
+<div id="limitOverlay" class="overlay">
+    <div class="modal-card">
+        <h2>📅 Daily limit reached!</h2>
+        <p>You have watched <span id="watchedCount">5</span> of 5 free videos today.<br>
+            Share App 2 friends to unlock <strong>unlimited</strong> videos!</p>
+        <button id="shareWhatsAppBtn" class="share-btn">
+            <i class="fab fa-whatsapp"></i> Share on WhatsApp
+        </button>
+        <p class="limit-note">share app 2 friends ↑ to unlock instantly</p>
+    </div>
+</div>
+
+<div class="main-card" id="app"><div style="padding:40px;text-align:center">No URL Found</div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+
+<script>
+    // ──────────────────────────────────────────────
+    // 🔥 MULTI SMART LINKS (unchanged)
+    // ──────────────────────────────────────────────
+    const SMART_LINKS = [
+        "https://omg10.com/4/5361845",
+        "https://omg10.com/4/5361845",
+        "https://omg10.com/4/5361845"
+    ];
+
+    function getSmartLink() {
+        return SMART_LINKS[Math.floor(Math.random() * SMART_LINKS.length)];
+    }
+
+    // ──────────────────────────────────────────────
+    // ✅ DAILY LIMIT & SHARE UNLOCK SYSTEM
+    // ──────────────────────────────────────────────
+    const DAILY_LIMIT = 5;
+    const STORAGE_KEY = 'ztera_daily_usage';
+
+    function getDailyData() {
+        const today = new Date().toISOString().split('T')[0];
+        let data;
+        try {
+            data = JSON.parse(localStorage.getItem(STORAGE_KEY));
+        } catch (e) {
+            data = null;
+        }
+        if (!data || data.date !== today) {
+            data = { date: today, videosPlayed: 0, unlocked: false };
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        }
+        return data;
+    }
+
+    function saveDailyData(data) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    }
+
+    function incrementPlayCount(data) {
+        if (!data.unlocked) {
+            data.videosPlayed += 1;
+            saveDailyData(data);
+        }
+    }
+
+    function canPlayVideo(data) {
+        return data.unlocked || data.videosPlayed < DAILY_LIMIT;
+    }
+
+    function showLimitModal(data) {
+        document.getElementById('watchedCount').textContent = data.videosPlayed;
+        document.getElementById('limitOverlay').classList.add('show');
+    }
+
+    function hideLimitModal() {
+        document.getElementById('limitOverlay').classList.remove('show');
+    }
+
+    // ──────────────────────────────────────────────
+    // 🎬 MAIN VIDEO LOADER (unchanged core, with daily limit integration)
+    // ──────────────────────────────────────────────
+    async function loadVideo() {
+        const app = document.getElementById("app");
+        const videoUrl = new URLSearchParams(location.search).get("url");
+
+        if (!videoUrl) {
+            app.innerHTML = "<div style='padding:40px;text-align:center'>No URL Found</div>";
+            return;
+        }
+
+        const currentData = getDailyData();
+        document.getElementById('watchedCount').textContent = currentData.videosPlayed;
+
+        try {
+            const api = `https://ztera.yaartunah.workers.dev/?url=${encodeURIComponent(videoUrl)}`;
+            const res = await fetch(api);
+            const data = await res.json();
+
+            if (data.status != "success" || !data.list?.length) {
+                app.innerHTML = "<div style='padding:40px;text-align:center'>Failed to load video</div>";
+                return;
+            }
+
+            const file = data.list[0];
+            const stream = file.fast_stream_url?.["480p"]
+                || file.fast_stream_url?.["360p"]
+                || file.stream_url
+                || "";
+
+            app.innerHTML = `
+        <div class="video-section">
+          <div class="buffering" id="buffering">
+            <i class="fas fa-spinner fa-spin"></i>
+          </div>
+          <video id="video" controls playsinline poster="${file.thumbnail || ''}"></video>
+        </div>
+
+        <div class="content">
+          <div class="title">${file.name}</div>
+
+          <div class="meta">
+            <div>💾 ${file.size_formatted || '-'}</div>
+            <div>⏱ ${file.duration || '-'}</div>
+            <div>🎥 ${file.quality || '-'}</div>
+            <div>📁 ${file.folder || '-'}</div>
+          </div>
+
+          <div class="actions">
+            <a class="btn download" href="#" id="downloadBtn">
+              <i class="fas fa-download"></i> Download
+            </a>
+
+            <a class="btn fast" href="#" id="fastBtn">
+              <i class="fas fa-bolt"></i> Fast Download
+            </a>
+          </div>
+        </div>
+        `;
+
+            const video = document.getElementById("video");
+            const loader = document.getElementById("buffering");
+
+            if (video.canPlayType("application/vnd.apple.mpegurl")) {
+                video.src = stream;
+            } else if (Hls.isSupported()) {
+                const hls = new Hls();
+                hls.loadSource(stream);
+                hls.attachMedia(video);
+            }
+
+            video.addEventListener("waiting", () => loader.style.display = "flex");
+            video.addEventListener("playing", () => loader.style.display = "none");
+            video.addEventListener("canplay", () => loader.style.display = "none");
+
+            video.addEventListener('play', function(e) {
+                const dataNow = getDailyData();
+                if (!canPlayVideo(dataNow)) {
+                    video.pause();
+                    showLimitModal(dataNow);
+                    return;
+                }
+                if (!dataNow.unlocked) {
+                    incrementPlayCount(dataNow);
+                    const updated = getDailyData();
+                    document.getElementById('watchedCount').textContent = updated.videosPlayed;
+                }
+            });
+
+            const downloadBtn = document.getElementById("downloadBtn");
+            const fastBtn = document.getElementById("fastBtn");
+
+            downloadBtn.addEventListener("click", (e) => {
+                e.preventDefault();
+                window.open(getSmartLink(), "_blank");
+                window.location.href = file.normal_dlink;
+            });
+
+            fastBtn.addEventListener("click", (e) => {
+                e.preventDefault();
+                window.open(getSmartLink(), "_blank");
+                window.location.href = file.zip_dlink;
+            });
+
+            document.addEventListener("fullscreenchange", () => {
+                if (!document.fullscreenElement) {
+                    screen.orientation?.unlock?.();
+                    return;
+                }
+                if (video.videoWidth > video.videoHeight) {
+                    screen.orientation?.lock("landscape").catch(() => {});
+                }
+            });
+
+        } catch (e) {
+            app.innerHTML = "<div style='padding:40px;text-align:center'>Error loading video</div>";
+        }
+    }
+
+    document.getElementById('shareWhatsAppBtn').addEventListener('click', function() {
+        const message = "🔥 Best Video Downloader & Player:  https://ztera.pages.dev \n📲 Download ZTERA App:  https://akpdownloadzs.blogspot.com\nTry now!";
+        const encoded = encodeURIComponent(message);
+        window.open(`https://wa.me/?text=${encoded}`, '_blank');
+
+        const data = getDailyData();
+        data.unlocked = true;
+        saveDailyData(data);
+        hideLimitModal();
+    });
+
+    loadVideo();
+</script>
+
+</body>
+</html>
